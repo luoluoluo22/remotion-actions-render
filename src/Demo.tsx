@@ -2,10 +2,15 @@ import React from 'react';
 import {
   AbsoluteFill,
   Easing,
+  Html5Audio,
+  Sequence,
   interpolate,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+
+const SYNC_FRAME = 150;
 
 export const Demo: React.FC = () => {
   const frame = useCurrentFrame();
@@ -33,6 +38,10 @@ export const Demo: React.FC = () => {
     .toFixed(2)
     .padStart(5, '0')}`;
   const progress = frame / (durationInFrames - 1);
+  const syncFlash = interpolate(frame, [SYNC_FRAME, SYNC_FRAME + 12], [1, 0], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   return (
     <AbsoluteFill
@@ -43,6 +52,11 @@ export const Demo: React.FC = () => {
           'ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif',
       }}
     >
+      <Html5Audio src={staticFile('music.wav')} volume={0.7} />
+      <Sequence from={SYNC_FRAME}>
+        <Html5Audio src={staticFile('sync-hit.wav')} />
+      </Sequence>
+
       <div
         style={{
           position: 'absolute',
@@ -96,7 +110,7 @@ export const Demo: React.FC = () => {
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          1920×1080 · 30fps · 10 seconds
+          1920×1080 · 30fps · 10 seconds · with audio
         </div>
         <div
           style={{
@@ -110,6 +124,30 @@ export const Demo: React.FC = () => {
           }}
         />
       </AbsoluteFill>
+
+      {syncFlash > 0 ? (
+        <AbsoluteFill
+          style={{
+            backgroundColor: `rgba(255, 236, 160, ${0.55 * syncFlash})`,
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 72,
+              fontWeight: 800,
+              letterSpacing: 4,
+              textTransform: 'uppercase',
+              opacity: syncFlash,
+              textShadow: '0 8px 32px rgba(0,0,0,0.45)',
+            }}
+          >
+            Sync hit · 5.00s
+          </div>
+        </AbsoluteFill>
+      ) : null}
 
       <div
         style={{
@@ -153,6 +191,19 @@ export const Demo: React.FC = () => {
           <div
             style={{
               position: 'absolute',
+              top: -18,
+              left: '50%',
+              width: 4,
+              height: 50,
+              marginLeft: -2,
+              background: '#ffe8a0',
+              borderRadius: 2,
+              opacity: 0.9,
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
               top: -11,
               left: playheadX - 80,
               width: 36,
@@ -172,7 +223,7 @@ export const Demo: React.FC = () => {
             letterSpacing: 0.4,
           }}
         >
-          Seamless check: playhead, frame counter and spinner must stay continuous across chunk joins
+          Music bed + 2 kHz sync hit at frame 150 (5.00s). Playhead and counter must stay continuous across chunk joins.
         </div>
       </div>
     </AbsoluteFill>

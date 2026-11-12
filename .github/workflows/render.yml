@@ -89,28 +89,10 @@ jobs:
       matrix:
         chunk: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-remotion
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chrome / Linux rendering libraries
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          # Official Remotion Linux deps for Ubuntu 24.04 (GitHub-hosted ubuntu-latest).
-          sudo apt-get install -y --no-install-recommends \
-            libnss3 libdbus-1-3 libatk1.0-0 libasound2t64 libxrandr2 \
-            libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 \
-            libgbm-dev libcups2 libcairo2 libpango-1.0-0 libatk-bridge2.0-0
-          npx remotion browser ensure
-
-      - name: Render frames ${{ matrix.chunk.start }}-${{ matrix.chunk.end }}
+      - name: Render muted frames ${{ matrix.chunk.start }}-${{ matrix.chunk.end }}
         run: |
           mkdir -p out
           npx remotion render "${ENTRY_POINT}" "${COMPOSITION_ID}" \
@@ -122,49 +104,86 @@ jobs:
             --crf=18 \
             --overwrite
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: chunk-${{ matrix.chunk.id }}
           path: out/chunk-${{ matrix.chunk.id }}.mp4
           if-no-files-found: error
           retention-days: 7
 
-  merge:
-    name: Merge chunks
-    needs: [plan, render]
+  render-audio:
+    name: Render audio
+    needs: plan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-remotion
 
-      - uses: actions/download-artifact@v4
+      - name: Render full-composition audio
+        run: |
+          mkdir -p out
+          npx remotion render "${ENTRY_POINT}" "${COMPOSITION_ID}" \
+            out/audio.aac \
+            --codec=aac \
+            --image-format=none \
+            --overwrite
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: audio
+          path: out/audio.aac
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    name: Merge chunks
+    needs: [plan, render, render-audio]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install npm packages
+        run: npm ci
+
+      - uses: actions/download-artifact@v7
         with:
           pattern: chunk-*
           path: chunks
           merge-multiple: true
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: actions/download-artifact@v7
+        with:
+          name: audio
+          path: audio
 
-      - name: Concatenate chunks
+      - name: Concatenate video and mux audio
         run: |
           set -euo pipefail
-          ls -la chunks
+          ls -la chunks audio
           : > concat.txt
           for f in $(ls chunks/chunk-*.mp4 | sort); do
             printf "file '%s'\n" "$(pwd)/$f" >> concat.txt
           done
           cat concat.txt
 
-          if ! ffmpeg -y -f concat -safe 0 -i concat.txt -c copy video.mp4; then
+          if ! npx remotion ffmpeg -y -f concat -safe 0 -i concat.txt -c copy video-only.mp4; then
             echo "Stream copy failed; re-encoding to guarantee a clean join"
-            ffmpeg -y -f concat -safe 0 -i concat.txt \
-              -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \
-              video.mp4
+            npx remotion ffmpeg -y -f concat -safe 0 -i concat.txt \
+              -c:v libx264 -pix_fmt yuv420p -crf 18 video-only.mp4
           fi
 
-          ffprobe -hide_banner -show_format -show_streams video.mp4 || true
+          npx remotion ffmpeg -y -i video-only.mp4 -i audio/audio.aac \
+            -map 0:v -map 1:a -c:v copy -c:a aac -shortest -movflags +faststart \
+            video.mp4
 
-      - uses: actions/upload-artifact@v4
+          npx remotion ffprobe -hide_banner -show_format -show_streams video.mp4 || true
+
+      - uses: actions/upload-artifact@v6
         with:
           name: video
           path: video.mp4
@@ -180,8 +199,9 @@ jobs:
           NOTES=$(cat <<MD
           Parallel Remotion render from [run ${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
-          - Composition: Demo (1920×1080, 30fps, 300 frames / 10s)
-          - Chunks: ${{ needs.plan.outputs.chunk-count }}
+          - Composition: Demo (1920×1080, 30fps, 300 frames / 10s) with AAC audio
+          - Chunks: ${{ needs.plan.outputs.chunk-count }} muted video slices + one full-composition audio render
+          - Sync check: 2 kHz hit at frame 150 (5.00s)
           MD
           )
           gh release create "$TAG" video.mp4 \
@@ -198,6 +218,6 @@ jobs:
             echo "- Release: https://github.com/${{ github.repository }}/releases/tag/render-${{ github.run_number }}"
             echo
             echo '```'
-            ffprobe -hide_banner video.mp4 2>&1 || true
+            npx remotion ffprobe -hide_banner video.mp4 2>&1 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

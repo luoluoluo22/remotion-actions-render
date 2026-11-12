@@ -1,0 +1,34 @@
+name: Setup Remotion
+description: Install Node, npm deps, Linux Chrome libraries, and a cached Chrome Headless Shell
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: npm
+
+    - name: Install npm packages and Linux libraries
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libnss3 libdbus-1-3 libatk1.0-0 libasound2t64 libxrandr2 \
+          libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 \
+          libgbm-dev libcups2 libcairo2 libpango-1.0-0 libatk-bridge2.0-0 &
+        apt_pid=$!
+        npm ci
+        wait "$apt_pid"
+
+    # Must run after `npm ci`, which replaces node_modules.
+    - uses: actions/cache@v5
+      with:
+        path: node_modules/.remotion
+        key: remotion-chrome-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          remotion-chrome-${{ runner.os }}-
+
+    - name: Ensure Chrome Headless Shell
+      shell: bash
+      run: npx remotion browser ensure
