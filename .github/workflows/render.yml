@@ -125,7 +125,6 @@ jobs:
           npx remotion render "${ENTRY_POINT}" "${COMPOSITION_ID}" \
             out/audio.aac \
             --codec=aac \
-            --image-format=none \
             --overwrite
 
       - uses: actions/upload-artifact@v6

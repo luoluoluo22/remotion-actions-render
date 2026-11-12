@@ -28,7 +28,7 @@ npm run render
 2. **render**（并发）：每台 runner `npm ci`、恢复缓存的 Chrome Headless Shell，然后  
    `npx remotion render Demo out/chunk-XXX.mp4 --frames=START-END --codec=h264 --muted`
 3. **render-audio**（与画面切片并行）：整段渲一次音轨  
-   `npx remotion render Demo out/audio.aac --codec=aac --image-format=none`
+   `npx remotion render Demo out/audio.aac --codec=aac`
 4. **merge**：用 `npx remotion ffmpeg` 无损拼接视频切片（优先 `-c copy`），再把 AAC 音轨 mux 进 `video.mp4`（`-map 0:v -map 1:a -c:v copy -c:a aac -shortest`），上传 artifact 并挂到 GitHub Release。
 
 视频切片保持 `--muted`，完整音轨单独渲染，避免把 AAC 切成多段再拼接时出现爆音或时间轴错位。
