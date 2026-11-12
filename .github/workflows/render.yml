@@ -142,6 +142,9 @@ jobs:
           path: chunks
           merge-multiple: true
 
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Concatenate chunks
         run: |
           set -euo pipefail
